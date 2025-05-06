@@ -1,0 +1,13 @@
+des sollte per hand gehen
+
+
+jupyter
+pytorch
+numpy
+matplotlib
+nibabel
+scikit-image
+torchio
+monai
+synapseclient
+tqdm
