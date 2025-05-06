@@ -4,23 +4,7 @@ This repository contains code and utilities for preprocessing, loading, and trai
 
 ---
 
-## 📁 Project Structure
-.
-├── ml/
-│ ├── dataset.py 
-│ │── trainer.py
-│
-├── utils/
-│ └── loading_utils.py
-│
-├── visualization/
-│ └── visualization.py
-│
-├── training_helper/ 
-│
-├── intro.ipynb # Getting started: visualizations, sample inspection
-├── training.ipynb # Full pipeline: data loading, training loop
-├── requirements.txt # dependencies
+<pre> ## 📁 Project Structure ``` . ├── ml/ │ ├── dataset.py │ ├── trainer.py  │ ├── utils/ │ └── loading_utils.py # File loading, parsing, and helper functions │ ├── visualization/ │ └── visualization.py # Plotting utilities (modalities + overlays) │ ├── training_helper/ # Subset of samples for debugging or testing ├── intro.ipynb # Getting started: visualizations, sample inspection ├── training.ipynb # Full pipeline: data loading, training loop ├── requirements.txt # Dependencies ``` </pre>
 
 ---
 
