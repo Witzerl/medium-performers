@@ -3,8 +3,20 @@
 This repository contains code and utilities for preprocessing, loading, and training a segmentation model on the MICCAI-LH-BraTS2025-MET Challenge dataset.
 
 ---
-
-<pre> ## 📁 Project Structure ``` . ├── ml/ │ ├── dataset.py │ ├── trainer.py  │ ├── utils/ │ └── loading_utils.py # File loading, parsing, and helper functions │ ├── visualization/ │ └── visualization.py # Plotting utilities (modalities + overlays) │ ├── training_helper/ # Subset of samples for debugging or testing ├── intro.ipynb # Getting started: visualizations, sample inspection ├── training.ipynb # Full pipeline: data loading, training loop ├── requirements.txt # Dependencies ``` </pre>
+## 📁 Project Structure
+<pre>
+. 
+├── ml/ 
+│   ├── dataset.py 
+│   └── trainer.py  
+├── utils/ 
+│   └── loading_utils.py    # File loading, parsing, and helper functions 
+├── visualization/ 
+│   └── visualization.py    # Plotting utilities (modalities + overlays)  
+├── intro.ipynb             # Getting started: visualizations, sample inspection 
+├── training.ipynb          # Full pipeline: data loading, training loop 
+└── requirements.txt        # Dependencies 
+</pre>
 
 ---
 
