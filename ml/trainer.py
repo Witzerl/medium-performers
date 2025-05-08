@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from tqdm.notebook import trange
 import torchio as tio
 
+from tqdm import tqdm
 
 @torch.no_grad()
 def evaluate(network: nn.Module, data: DataLoader, metric_fn: callable) -> list:
@@ -13,15 +14,15 @@ def evaluate(network: nn.Module, data: DataLoader, metric_fn: callable) -> list:
     device = next(network.parameters()).device
 
     results = []
-    for batch in data:
+    for batch in tqdm(data, 'Evaluating'):
         inputs = torch.cat([
             batch['t1n'][tio.DATA],
             batch['t1c'][tio.DATA],
             batch['t2w'][tio.DATA],
             batch['t2f'][tio.DATA],
-        ], dim=1).to(device)
+        ], dim=1).float().to(device)
 
-        targets = batch['seg'][tio.DATA].squeeze(1).to(device)
+        targets = batch['seg'][tio.DATA].float().squeeze(1).to(device)
 
         outputs = network(inputs)
         results.append(metric_fn(outputs, targets))
@@ -35,15 +36,15 @@ def update(network: nn.Module, data: DataLoader, loss_fn: nn.Module,
     device = next(network.parameters()).device
 
     losses = []
-    for batch in data:
+    for batch in tqdm(data, 'Updating'):
         inputs = torch.cat([
             batch['t1n'][tio.DATA],
             batch['t1c'][tio.DATA],
             batch['t2w'][tio.DATA],
             batch['t2f'][tio.DATA],
-        ], dim=1).to(device)
+        ], dim=1).float().to(device)
 
-        targets = batch['seg'][tio.DATA].squeeze(1).to(device)
+        targets = batch['seg'][tio.DATA].float().squeeze(1).to(device)
 
         opt.zero_grad()
         outputs = network(inputs)
@@ -65,7 +66,7 @@ class Trainer:
         self.val_metric_history = []
 
     def train(self, train_loader, val_loader, epochs):
-        for epoch in trange(epochs, desc="Epochs"):
+        for epoch in range(epochs):
             train_losses = update(self.model, train_loader, self.loss_fn, self.optimizer)
             avg_train_loss = torch.stack(train_losses).mean().item()
             self.train_loss_history.append(avg_train_loss)
