@@ -13,11 +13,13 @@ MICCAI-LH-BraTS2025-MET Challenge dataset.
 │   ├── dataset.py 
 │   └── trainer.py  
 ├── utils/ 
+│   ├── preprocessing.py    # Data preprocessing
 │   └── loading_utils.py    # File loading, parsing, and helper functions 
 ├── visualization/ 
 │   └── visualization.py    # Plotting utilities (modalities + overlays)  
 ├── intro.ipynb             # Getting started: visualizations, sample inspection 
 ├── training.ipynb          # Full pipeline: data loading, training loop 
+├── train.py                # Training pipeline
 └── requirements.txt        # Dependencies 
 </pre>
 

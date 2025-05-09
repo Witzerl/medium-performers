@@ -9,20 +9,24 @@ import torchio as tio
 from tqdm import tqdm
 
 @torch.no_grad()
-def evaluate(network: nn.Module, data: DataLoader, metric_fn: callable) -> list:
+def evaluate(network: nn.Module, data: DataLoader, metric_fn: callable, use_torchio=False) -> list:
     network.eval()
     device = next(network.parameters()).device
 
     results = []
     for batch in tqdm(data, 'Evaluating'):
-        inputs = torch.cat([
-            batch['t1n'][tio.DATA],
-            batch['t1c'][tio.DATA],
-            batch['t2w'][tio.DATA],
-            batch['t2f'][tio.DATA],
-        ], dim=1).float().to(device)
+        if use_torchio:
+            inputs = torch.cat([
+                batch['t1n'][tio.DATA],
+                batch['t1c'][tio.DATA],
+                batch['t2w'][tio.DATA],
+                batch['t2f'][tio.DATA],
+            ], dim=1).float().to(device)
 
-        targets = batch['seg'][tio.DATA].float().squeeze(1).to(device)
+            targets = batch['seg'][tio.DATA].float().squeeze(1).to(device)
+        else:
+            inputs, targets = batch
+            inputs, targets = inputs.to(device), targets.squeeze().to(device)
 
         outputs = network(inputs)
         results.append(metric_fn(outputs, targets))
@@ -30,21 +34,24 @@ def evaluate(network: nn.Module, data: DataLoader, metric_fn: callable) -> list:
 
 
 @torch.enable_grad()
-def update(network: nn.Module, data: DataLoader, loss_fn: nn.Module,
-           opt: optim.Optimizer) -> list:
+def update(network: nn.Module, data: DataLoader, loss_fn: nn.Module, opt: optim.Optimizer, use_torchio=False) -> list:
     network.train()
     device = next(network.parameters()).device
 
     losses = []
     for batch in tqdm(data, 'Updating'):
-        inputs = torch.cat([
-            batch['t1n'][tio.DATA],
-            batch['t1c'][tio.DATA],
-            batch['t2w'][tio.DATA],
-            batch['t2f'][tio.DATA],
-        ], dim=1).float().to(device)
+        if use_torchio:
+            inputs = torch.cat([
+                batch['t1n'][tio.DATA],
+                batch['t1c'][tio.DATA],
+                batch['t2w'][tio.DATA],
+                batch['t2f'][tio.DATA],
+            ], dim=1).float().to(device)
 
-        targets = batch['seg'][tio.DATA].float().squeeze(1).to(device)
+            targets = batch['seg'][tio.DATA].float().squeeze(1).to(device)
+        else:
+            inputs, targets = batch
+            inputs, targets = inputs.to(device), targets.squeeze().to(device)
 
         opt.zero_grad()
         outputs = network(inputs)
@@ -56,7 +63,7 @@ def update(network: nn.Module, data: DataLoader, loss_fn: nn.Module,
     return losses
 
 class Trainer:
-    def __init__(self, model, optimizer, loss_fn, metric_fn, device='cuda'):
+    def __init__(self, model, optimizer, loss_fn, metric_fn, device='cuda', use_torchio=False):
         self.model = model.to(device)
         self.optimizer = optimizer
         self.loss_fn = loss_fn
@@ -64,14 +71,15 @@ class Trainer:
         self.device = device
         self.train_loss_history = []
         self.val_metric_history = []
+        self.use_torchio = use_torchio
 
     def train(self, train_loader, val_loader, epochs):
         for epoch in range(epochs):
-            train_losses = update(self.model, train_loader, self.loss_fn, self.optimizer)
+            train_losses = update(self.model, train_loader, self.loss_fn, self.optimizer, use_torchio=self.use_torchio)
             avg_train_loss = torch.stack(train_losses).mean().item()
             self.train_loss_history.append(avg_train_loss)
 
-            val_metrics = evaluate(self.model, val_loader, self.metric_fn)
+            val_metrics = evaluate(self.model, val_loader, self.metric_fn, use_torchio=self.use_torchio)
             avg_val_metric = torch.stack(val_metrics).mean().item()
             self.val_metric_history.append(avg_val_metric)
 

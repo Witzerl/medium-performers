@@ -15,14 +15,14 @@ from monai.networks.nets import UNet, AttentionUnet
 
 from utils.loading_utils import *
 from visualization.visualization import *
-from ml.dataset_ import BrainMetDatasetPreloaded, BrainMetDataset, GridSamplerWrapper, RandomCropOrPad
+from ml.dataset_ import BrainMetDatasetPreloaded, BrainMetDataset, GridSamplerWrapper, RandomCropOrPad, BrainMetPytorchDataset
 from ml.trainer import Trainer
 
 SEED = 42
 
 # NOTE: './training_helper/' is a dummy folder that should hold 5 samples and is used for quick testing to avoid loading the whole dataset
-TRAIN_ROOT_DIR = './MICCAI-LH-BraTS2025-MET-Challenge-Training/'
-VAL_ROOT_DIR   = './training_helper/'  # './MICCAI-LH-BraTS2025-MET-Challenge-Validation/'
+TRAIN_ROOT_DIR  = './MICCAI-LH-BraTS2025-MET-Challenge-Training/'
+HELPER_ROOT_DIR = './training_helper/'
 
 
 def fix_seed(seed=SEED) -> None:
@@ -57,44 +57,57 @@ def print_information() -> None:
 # Increasing the patch size for the UniformSampler and the CropOrPad leads to huge RAM requirements and kills the program
 
 # TODO: Mitigate GPU idling and CPU loading bottleneck
-def load_data(device: torch.cuda.device, batch_size: int, num_workers: int = 0):
+def load_data(batch_size: int, num_workers: int = 0, use_torchio_version=False):
+    if not use_torchio_version:
+        print(f'Using pytorch dataloading ...')
 
-    # Could also use LabelSampler to focus more on the areas where the labels are but for some this sampler fails
-    # because they are too close to the border. This could be fixed by adding a padding to the tio.Compose but then
-    # again this leads to huge volumes that take up too much RAM and kills the program.
-    sampler = tio.UniformSampler(patch_size=(32, 32, 32))
+        # The BraTS2025 Validation set provided on the website has no segmentation layers in them -> it's the testingset
+        # There we have to randomly split into train-test-set
+        dataset = BrainMetPytorchDataset(TRAIN_ROOT_DIR, patch_size=(128, 128, 96))
+        train_dataset, validation_dataset = torch.utils.data.random_split(dataset, [0.8, 0.2])
 
-    train_transform = tio.Compose([
-        tio.Resample((1,1,1)),
-        tio.CropOrPad((32, 32, 32)),   # Make sure that the scans have the same shape
-        tio.ZNormalization(include=('t1n', 't1c', 't2w', 't2f')),
+        train_dataloader = DataLoader(train_dataset, batch_size=batch_size, num_workers=num_workers, shuffle=True, pin_memory=True)
+        validation_dataset = DataLoader(validation_dataset, batch_size=batch_size, num_workers=num_workers, shuffle=False, pin_memory=True)
+        return train_dataloader, validation_dataset
 
-        # tio.EnsureShapeMultiple(16),
-        # tio.RandomAffine(scales=(0.9, 1.1), degrees=10),
-        # tio.RandomElasticDeformation(),
-        # tio.RandomNoise(),
-        # tio.RandomFlip(axes=('LR',)),
-    ])
+    else:
+        print(f'Using torchio dataloading ...')
+        # Could also use LabelSampler to focus more on the areas where the labels are but for some this sampler fails
+        # because they are too close to the border. This could be fixed by adding a padding to the tio.Compose but then
+        # again this leads to huge volumes that take up too much RAM and kills the program.
+        sampler = tio.UniformSampler(patch_size=(32, 32, 32))
 
-    validation_transform = tio.Compose([
-        tio.Resample((1,1,1)),
-        tio.CropOrPad((32, 32, 32)),   # Make sure that the scans have the same shape
-        tio.ZNormalization(include=('t1n', 't2w', 't2f')),
+        train_transform = tio.Compose([
+            tio.Resample((1,1,1)),
+            tio.CropOrPad((32, 32, 32)),   # Make sure that the scans have the same shape
+            tio.ZNormalization(include=('t1n', 't1c', 't2w', 't2f')),
 
-        # tio.EnsureShapeMultiple(16),
-    ])
+            # tio.EnsureShapeMultiple(16),
+            # tio.RandomAffine(scales=(0.9, 1.1), degrees=10),
+            # tio.RandomElasticDeformation(),
+            # tio.RandomNoise(),
+            # tio.RandomFlip(axes=('LR',)),
+        ])
 
-    # Using a Queue instead of directly passing the dataset to the Subjects loader (should) make applying the transformations faster
-    # Additionally, we can add a sampler to get random patches
-    train_dataset = BrainMetDataset(TRAIN_ROOT_DIR, transform=train_transform)
-    train_queue = tio.Queue(train_dataset, max_length=256, samples_per_volume=8, sampler=sampler, num_workers=num_workers, shuffle_patches=True, shuffle_subjects=True)
-    train_dataloder = tio.SubjectsLoader(train_queue, batch_size=batch_size, num_workers=0)  # Note since we use the queue we have to set the number of workers here to 0
+        validation_transform = tio.Compose([
+            tio.Resample((1,1,1)),
+            tio.CropOrPad((32, 32, 32)),   # Make sure that the scans have the same shape
+            tio.ZNormalization(include=('t1n', 't2w', 't2f')),
 
-    validation_dataset = BrainMetDataset(VAL_ROOT_DIR, transform=validation_transform)
-    validation_queue = tio.Queue(validation_dataset, max_length=256, samples_per_volume=8, sampler=sampler, num_workers=num_workers)
-    validation_dataloader = tio.SubjectsLoader(validation_queue, batch_size=batch_size, num_workers=0)  # Note since we use the queue we have to set the number of workers here to 0
+            # tio.EnsureShapeMultiple(16),
+        ])
 
-    return train_dataloder, validation_dataloader
+        # Using a Queue instead of directly passing the dataset to the Subjects loader (should) make applying the transformations faster
+        # Additionally, we can add a sampler to get random patches
+        train_dataset = BrainMetDataset(HELPER_ROOT_DIR, transform=train_transform)
+        train_queue = tio.Queue(train_dataset, max_length=256, samples_per_volume=8, sampler=sampler, num_workers=num_workers, shuffle_patches=True, shuffle_subjects=True)
+        train_dataloder = tio.SubjectsLoader(train_queue, batch_size=batch_size, num_workers=0)  # Note since we use the queue we have to set the number of workers here to 0
+
+        validation_dataset = BrainMetDataset(HELPER_ROOT_DIR, transform=validation_transform)
+        validation_queue = tio.Queue(validation_dataset, max_length=256, samples_per_volume=8, sampler=sampler, num_workers=num_workers)
+        validation_dataloader = tio.SubjectsLoader(validation_queue, batch_size=batch_size, num_workers=0)  # Note since we use the queue we have to set the number of workers here to 0
+
+        return train_dataloder, validation_dataloader
 
 
 def define_model(model: str, device: torch.cuda.device) -> nn.Module:
@@ -171,11 +184,11 @@ def main(args) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print('Using device:', device)
 
-    train_dataloader, val_dataloader = load_data(device, batch_size=args.batch_size, num_workers=args.num_workers)
+    train_dataloader, val_dataloader = load_data(batch_size=args.batch_size, num_workers=args.num_workers, use_torchio_version=args.use_torchio)
     model = define_model(args.model, device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    trainer = Trainer(model, optimizer, loss_fn, dice_score, device=device)
+    trainer = Trainer(model, optimizer, loss_fn, dice_score, device=device, use_torchio=args.use_torchio)
     trainer.train(train_loader=train_dataloader, val_loader=val_dataloader, epochs=args.epochs)
 
     print('Done')
@@ -194,6 +207,9 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate')
     parser.add_argument('--epochs', type=int, default=5, help='Number of epochs')
     parser.add_argument('--weight_decay', type=float, default=0.01, help='Weight decay')
+
+    # Miscellaneous
+    parser.add_argument('--use_torchio', action='store_true', help='Use torchio data-loading version')
 
     command_line_args = parser.parse_args()
     main(command_line_args)

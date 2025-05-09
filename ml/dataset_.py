@@ -3,11 +3,18 @@ import os
 import numpy as np
 import torch
 import torchio as tio
+import nibabel as nib
 from tqdm import tqdm
+
 from utils.loading_utils import load_case
-from typing import Tuple
+from utils.preprocessing import (z_score_normalization, random_crop_3d)
 
 class RandomCropOrPad(tio.Transform):
+    """ Random Crop or Pad for tio.Compose
+     Note: This is still a bit buggy and unstable
+
+     """
+
     def __init__(self, target_shape, padding_mode='constant', padding_value=0, p=1):
         super().__init__(p=p)
         self.target_shape = np.array(target_shape)
@@ -55,6 +62,72 @@ class RandomCropOrPad(tio.Transform):
             image.set_data(data)
 
         return subject
+
+class BrainMetPytorchDataset(Dataset):
+    """ Pytorch Dataset for loading BraTS datapoints.
+    Based on https://github.com/KurtLabUW/brats2023_updated/tree/master
+
+    Args:
+        root_dir: Root directory of the dataset.
+        patch_size: Patch size (ph, pw, pd) to randomly crop images for.
+        img_pad_value: Const value with which the input images are padded.
+        seg_pad_value: Const value with which the segmentations are padded.
+    """
+    def __init__(self, root_dir, patch_size=(128,128, 96), img_pad_value=0, seg_pad_value=0):
+        self.root_dir = root_dir
+        self.patch_size = patch_size
+        self.img_pad_value = img_pad_value
+        self.seg_pad_value = seg_pad_value
+
+        self.datapoints = [d for d in os.listdir(self.root_dir) if os.path.isdir(os.path.join(self.root_dir, d)) and d.startswith('BraTS-MET')]
+
+    def __len__(self):
+        return len(self.datapoints)
+
+    def __getitem__(self, idx):
+        """ Loads the datapoint at index idx and applies a z-score normalization over the layers
+        and a random cropping into the whole volume before returning.
+
+        Returns:
+            images: Torch tensor 3d image of shape (4, ph, ph, pd)
+            segmentation: Torch tensor 3d segmentation of shape (1, ph, ph, pd)
+        """
+
+        data_point = self.datapoints[idx]
+        images, segmentation = self._prepare_datapoint(data_point)
+
+        # Layer-wise transformations
+        images = [np.ascontiguousarray(x, dtype=np.float32) for x in images]
+        images = [z_score_normalization(x) for x in images]
+
+        segmentation = np.ascontiguousarray(segmentation, dtype=np.float32)
+
+        # Assemble volumes
+        images = np.stack(images)               # (4, H, W, D)
+        segmentation = segmentation[None, ...]  # (1, H, W, D)
+        # segmentation = segmentation_to_channels(segmentation)
+
+        # Volume transformations
+        images, segmentation = random_crop_3d(images, segmentation, crop_size=self.patch_size, img_pad_value=self.img_pad_value, seg_pad_value=self.seg_pad_value)
+        return torch.from_numpy(images), torch.from_numpy(segmentation)
+
+    def _prepare_datapoint(self, datapoint):
+        """ Loads the  different layers and segmentations """
+
+        layer_data = list()
+        for suffix in ['t1n', 't1c', 't2w', 't2f']:
+            data = self._load(datapoint, suffix)
+            layer_data.append(data)
+
+        segmentation_data = self._load(datapoint, 'seg')
+        return layer_data, segmentation_data
+
+    def _load(self, datapoint, suffix):
+        """ Loads a layer using nibabel """
+
+        filename = f'{datapoint}-{suffix}.nii.gz'
+        path = os.path.join(self.root_dir, datapoint, filename)
+        return nib.load(path).get_fdata()
 
 # ... BrainMetDataset, BrainMetDatasetPreloaded
 #       -> returns torchio.Subject; needs a torchio.SubjectsLoader
