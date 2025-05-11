@@ -79,6 +79,8 @@ class BrainMetPytorchDataset(Dataset):
         self.img_pad_value = img_pad_value
         self.seg_pad_value = seg_pad_value
 
+        # TODO: For now it only looks at the top-level directories and ignores the UCSD-Training folder
+        #  and including this folder drastically increases the training time (over and hour per epoch) and randomly kills workers
         self.datapoints = [d for d in os.listdir(self.root_dir) if os.path.isdir(os.path.join(self.root_dir, d)) and d.startswith('BraTS-MET')]
 
     def __len__(self):
