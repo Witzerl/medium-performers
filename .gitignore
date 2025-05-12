@@ -1,3 +1,4 @@
 /MICCAI-LH-BraTS2025-MET-Challenge-Training/
 /MICCAI-LH-BraTS2025-MET-Challenge-Validation/
-/runs/
+runs/*
+!runs/.gitkeep
