@@ -7,4 +7,4 @@ synapseclient>=4.8.0
 torch>=2.7.0
 torchio>=0.20.8
 tqdm>=4.67.1
-tensorflow>=2.15.0
+tensorboard>=2.19.0

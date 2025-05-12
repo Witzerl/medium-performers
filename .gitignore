@@ -2,3 +2,6 @@
 /MICCAI-LH-BraTS2025-MET-Challenge-Validation/
 runs/*
 !runs/.gitkeep
+
+# Jetbrain
+.idea/
