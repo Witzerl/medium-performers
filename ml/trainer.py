@@ -19,6 +19,7 @@ class Trainer:
         self.device = device
         self.train_loss_history = []
         self.val_metric_history = []
+        self.val_loss_history = []
         self.use_torchio = use_torchio
 
         if tracker is None:
@@ -29,7 +30,7 @@ class Trainer:
         """ Current state of learning. """
         return {
             "model": self.model.state_dict(),
-            "objective": self.loss_fn.state_dict(),
+            #"objective": self.loss_fn.state_dict(),
             "optimiser": self.optimizer.state_dict(),
             "num_epochs": self.tracker.epoch,
             "num_updates": self.tracker.update,
@@ -77,6 +78,8 @@ class Trainer:
 
         res = torch.stack(dice_scores).mean().item()
         self.tracker._summary["metric"] = res
+
+        self.val_metric_history.append(res)
         avg_loss = self.tracker.summary()
         return avg_loss
 
@@ -105,12 +108,12 @@ class Trainer:
                 inputs, targets = inputs.to(device), targets.to(device)
             outputs = self.model(inputs)
             loss_value = self.loss_fn(outputs, targets)
-            losses.append(loss_value.item())
 
             self.optimizer.zero_grad()
             loss_value.backward()
             self.optimizer.step()
 
+            losses.append(loss_value.item())
             self.tracker.step(loss_value.item())
             self.tracker.count_update()
 
@@ -125,11 +128,11 @@ class Trainer:
             #avg_train_loss = torch.stack(train_losses).mean().item()
             self.train_loss_history.append(avg_train_loss)
 
-            avg_val_metric = self.evaluate(val_loader, use_torchio=self.use_torchio, tag="valid")
+            avg_val_loss = self.evaluate(val_loader, use_torchio=self.use_torchio, tag="valid")
 
             #val_metrics = evaluate(self.model, val_loader, self.metric_fn, use_torchio=self.use_torchio)
             #avg_val_metric = torch.stack(val_metrics).mean().item()
-            self.val_metric_history.append(avg_val_metric)
+            self.val_loss_history.append(avg_val_loss)
 
             #print(f"Epoch {epoch + 1}/{epochs} | Train Loss: {avg_train_loss:.4f} | Val Metric: {avg_val_metric:.4f}")
             self.tracker.end_epoch()
@@ -141,6 +144,7 @@ class Trainer:
 
         plt.subplot(1, 2, 1)
         plt.plot(self.train_loss_history, label='Train Loss', marker='o')
+        plt.plot(self.val_loss_history, label='Valid Loss', marker='o')
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
         plt.title('Training Loss')
