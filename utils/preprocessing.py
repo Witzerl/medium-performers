@@ -1,6 +1,5 @@
 import numpy as np
 
-
 def z_score_normalization(layer, eps=1e-8):
     """ Applies z-score normalization on a layer.
 
@@ -67,3 +66,23 @@ def random_crop_3d(volume, segmentation, crop_size, img_pad_value=0, seg_pad_val
     cropped_volume = padded_volume[:, start_h:start_h + ch, start_w:start_w + cw, start_d:start_d + cd]
     cropped_segmentation = padded_segmentation[:, start_h:start_h + ch, start_w:start_w + cw, start_d:start_d + cd]
     return cropped_volume, cropped_segmentation
+
+def resample_to_uniform(volume, input_spacing, target_spacing=(1.0, 1.0, 1.0)):
+    """
+     Resample to Uniform Spacing
+    """
+    input_spacing = np.array(input_spacing)
+    target_spacing = np.array(target_spacing)
+
+    zoom_factors = input_spacing / target_spacing
+    input_shape = np.array(volume.shape)
+    output_shape = np.round(input_shape * zoom_factors).astype(int)
+    # Create output grid
+    dz = np.linspace(0, input_shape[0] - 1, output_shape[0]).astype(int)
+    dy = np.linspace(0, input_shape[1] - 1, output_shape[1]).astype(int)
+    dx = np.linspace(0, input_shape[2] - 1, output_shape[2]).astype(int)
+    # Meshgrid for indexing
+
+    zz, yy, xx = np.meshgrid(dz, dy, dx, indexing='ij')
+    return volume[zz, yy, xx]
+

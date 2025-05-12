@@ -7,7 +7,7 @@ import nibabel as nib
 from tqdm import tqdm
 
 from utils.loading_utils import load_case
-from utils.preprocessing import (z_score_normalization, random_crop_3d)
+from utils.preprocessing import (z_score_normalization, random_crop_3d, resample_to_uniform)
 
 class RandomCropOrPad(tio.Transform):
     """ Random Crop or Pad for tio.Compose
@@ -125,11 +125,19 @@ class BrainMetPytorchDataset(Dataset):
         return layer_data, segmentation_data
 
     def _load(self, datapoint, suffix):
-        """ Loads a layer using nibabel """
+        """ Loads full 3d vol using nibabel """
 
         filename = f'{datapoint}-{suffix}.nii.gz'
         path = os.path.join(self.root_dir, datapoint, filename)
-        return nib.load(path).get_fdata()
+
+        img = nib.load(path)
+        data = img.get_fdata(dtype=np.float32)
+        spacing = img.header.get_zooms()[:3]
+
+        target_spacing = (1.0, 1.0, 1.0)
+        if not np.allclose(spacing, (1.0, 1.0, 1.0), atol=1e-3):
+            data = resample_to_uniform(data, spacing, target_spacing)
+        return data
 
 # ... BrainMetDataset, BrainMetDatasetPreloaded
 #       -> returns torchio.Subject; needs a torchio.SubjectsLoader
