@@ -131,6 +131,13 @@ class BrainMetPytorchDataset(Dataset):
         path = os.path.join(self.root_dir, datapoint, filename)
 
         img = nib.load(path)
+
+        # assert RAS orientation for all samples
+        orig_ornt = nib.io_orientation(img.affine)
+        targ_ornt = nib.orientations.axcodes2ornt("RAS")
+        transform = nib.orientations.ornt_transform(orig_ornt, targ_ornt)
+        img = img.as_reoriented(transform)
+
         data = img.get_fdata(dtype=np.float32)
         spacing = img.header.get_zooms()[:3]
 
@@ -171,17 +178,19 @@ class BrainMetFullVolumeDataset(Dataset):
     def _load(self, datapoint, suffix):
         path = os.path.join(self.root_dir, datapoint, f"{datapoint}-{suffix}.nii.gz")
         img = nib.load(path)
+
+        # assert RAS orientation for all samples
+        orig_ornt = nib.io_orientation(img.affine)
+        targ_ornt = nib.orientations.axcodes2ornt("RAS")
+        transform = nib.orientations.ornt_transform(orig_ornt, targ_ornt)
+        img = img.as_reoriented(transform)
+
         data = img.get_fdata(dtype=np.float32)
         spacing = img.header.get_zooms()[:3]
 
         if not np.allclose(spacing, (1.0, 1.0, 1.0), atol=1e-3):
             data = resample_to_uniform(data, spacing, target_spacing=(1.0, 1.0, 1.0))
         return data
-
-
-
-
-
 
 
 class BrainMetDataset(tio.SubjectsDataset):

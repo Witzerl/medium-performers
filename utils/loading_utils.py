@@ -53,8 +53,18 @@ def load_nifti(file_path):
     """
 
     img = nib.load(file_path)
-    img = nib.as_closest_canonical(img)
+
+    # img = nib.as_closest_canonical(img)
+    print('original orientation:', nib.orientations.ornt2axcodes(nib.orientations.io_orientation(img.affine)))
+
+    orig_ornt = nib.io_orientation(img.affine)
+    targ_ornt = nib.orientations.axcodes2ornt("RAS")
+    transform = nib.orientations.ornt_transform(orig_ornt, targ_ornt)
+
+    img = img.as_reoriented(transform)
+
     data = img.get_fdata().astype(np.float32)
+
     affine = img.affine
 
     spacing = np.sqrt((affine[:3, :3] ** 2).sum(axis=0))
@@ -62,13 +72,13 @@ def load_nifti(file_path):
 
     shape = data.shape
 
-    suspicious = False
+    suspicious = True
 
     # Check if first dimension is much different from second and third
     # Assume if dim0 differs a lot, it was wrongly ordered (wrong orientation)
-    if not (np.isclose(shape[0], shape[1], rtol=0.1) or np.isclose(shape[0], shape[2], rtol=0.1)):
-        suspicious = True
-        data = np.transpose(data, (1, 2, 0))
+    # if not (np.isclose(shape[0], shape[1], rtol=0.1) or np.isclose(shape[0], shape[2], rtol=0.1)):
+    #     suspicious = True
+    #     data = np.transpose(data, (1, 2, 0))
 
     info = {
         'original_shape': shape,
