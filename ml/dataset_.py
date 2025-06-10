@@ -150,45 +150,23 @@ class BrainMetPytorchDataset(Dataset):
 
 class BrainMetFullVolumeDataset(Dataset):
     """
-    Dataset for loading full-resolution BraTS-MET volumes (no cropping).
-    Suitable for evaluation/inference.
-
-    Returns:
-        images: (4, H, W, D)
-        segmentation: (1, H, W, D)
+    Dataset for generating predictions on BraTS-MET validation/test set.
+    Only loads the 4 image modalities (no segmentation).
     """
-    def __init__(self, root_dir, img_pad_value=0, seg_pad_value=0):
+    def __init__(self, root_dir):
         self.root_dir = root_dir
-        self.img_pad_value = img_pad_value
-        self.seg_pad_value = seg_pad_value
         self.datapoints = [d for d in os.listdir(self.root_dir)
-                           if os.path.isdir(os.path.join(self.root_dir, d))
-                           and d.startswith('BraTS-MET')]
+                           if os.path.isdir(os.path.join(self.root_dir, d)) and d.startswith('BraTS-MET')]
 
     def __len__(self):
         return len(self.datapoints)
 
     def __getitem__(self, idx):
-        data_point = self.datapoints[idx]
-        images, segmentation = self._prepare_datapoint(data_point)
-
-        # Layer-wise preprocessing
-        images = [np.ascontiguousarray(x, dtype=np.float32) for x in images]
-        images = [z_score_normalization(x) for x in images]
-        segmentation = np.ascontiguousarray(segmentation, dtype=np.float32)
-
-        # Assemble tensors
-        images = np.stack(images)               # (4, H, W, D)
-        segmentation = segmentation[None, ...]  # (1, H, W, D)
-
-        return torch.from_numpy(images), torch.from_numpy(segmentation)
-
-    def _prepare_datapoint(self, datapoint):
-        layers = []
-        for suffix in ['t1n', 't1c', 't2w', 't2f']:
-            layers.append(self._load(datapoint, suffix))
-        segmentation = self._load(datapoint, 'seg')
-        return layers, segmentation
+        datapoint = self.datapoints[idx]
+        images = [self._load(datapoint, suffix) for suffix in ['t1n', 't1c', 't2w', 't2f']]
+        images = [z_score_normalization(np.ascontiguousarray(x, dtype=np.float32)) for x in images]
+        images = np.stack(images)  # (4, H, W, D)
+        return torch.from_numpy(images), datapoint  # return ID for naming
 
     def _load(self, datapoint, suffix):
         path = os.path.join(self.root_dir, datapoint, f"{datapoint}-{suffix}.nii.gz")
