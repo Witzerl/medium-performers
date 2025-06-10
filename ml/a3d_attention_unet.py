@@ -3,7 +3,7 @@ import importlib
 import torch
 import torch.nn as nn
 
-from BuildingBlocks import Encoder, Decoder, FinalConv, DoubleConv, ExtResNetBlock, SingleConv
+from ml.BuildingBlocks import Encoder, Decoder, FinalConv, DoubleConv, ExtResNetBlock, SingleConv
 
 
 

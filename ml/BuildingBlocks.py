@@ -2,7 +2,7 @@ import torch
 from torch import nn as nn
 from torch.nn import functional as F
 
-from sca_3d import SCA3D
+from ml.sca_3d import SCA3D
 
 def conv3d(in_channels, out_channels, kernel_size, bias, padding=1):
     return nn.Conv3d(in_channels, out_channels, kernel_size, padding=padding, bias=bias)
