@@ -143,8 +143,8 @@ class Trainer:
         plt.figure(figsize=(10, 4))
 
         plt.subplot(1, 2, 1)
-        plt.plot(self.train_loss_history, label='Train Loss', marker='o')
-        plt.plot(self.val_loss_history, label='Valid Loss', marker='o')
+        plt.plot(self.train_loss_history, label='Train Loss')#, marker='o')
+        plt.plot(self.val_loss_history, label='Valid Loss')#, marker='o')
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
         plt.title('Training Loss')
@@ -154,7 +154,7 @@ class Trainer:
         plt.plot(self.val_metric_history, label='Val Metric', marker='o')
         plt.xlabel('Epoch')
         plt.ylabel('Metric')
-        plt.title('Validation Metric')
+        plt.title('Dice Score')
         plt.grid(True)
 
         plt.tight_layout()

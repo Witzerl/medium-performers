@@ -148,6 +148,64 @@ class BrainMetPytorchDataset(Dataset):
 #       -> non-proloaded: lazy variant loads on getitem()
 #       -> Preloaded: loads the complete dataset into memory on init() (only if hw allows)
 
+class BrainMetFullVolumeDataset(Dataset):
+    """
+    Dataset for loading full-resolution BraTS-MET volumes (no cropping).
+    Suitable for evaluation/inference.
+
+    Returns:
+        images: (4, H, W, D)
+        segmentation: (1, H, W, D)
+    """
+    def __init__(self, root_dir, img_pad_value=0, seg_pad_value=0):
+        self.root_dir = root_dir
+        self.img_pad_value = img_pad_value
+        self.seg_pad_value = seg_pad_value
+        self.datapoints = [d for d in os.listdir(self.root_dir)
+                           if os.path.isdir(os.path.join(self.root_dir, d))
+                           and d.startswith('BraTS-MET')]
+
+    def __len__(self):
+        return len(self.datapoints)
+
+    def __getitem__(self, idx):
+        data_point = self.datapoints[idx]
+        images, segmentation = self._prepare_datapoint(data_point)
+
+        # Layer-wise preprocessing
+        images = [np.ascontiguousarray(x, dtype=np.float32) for x in images]
+        images = [z_score_normalization(x) for x in images]
+        segmentation = np.ascontiguousarray(segmentation, dtype=np.float32)
+
+        # Assemble tensors
+        images = np.stack(images)               # (4, H, W, D)
+        segmentation = segmentation[None, ...]  # (1, H, W, D)
+
+        return torch.from_numpy(images), torch.from_numpy(segmentation)
+
+    def _prepare_datapoint(self, datapoint):
+        layers = []
+        for suffix in ['t1n', 't1c', 't2w', 't2f']:
+            layers.append(self._load(datapoint, suffix))
+        segmentation = self._load(datapoint, 'seg')
+        return layers, segmentation
+
+    def _load(self, datapoint, suffix):
+        path = os.path.join(self.root_dir, datapoint, f"{datapoint}-{suffix}.nii.gz")
+        img = nib.load(path)
+        data = img.get_fdata(dtype=np.float32)
+        spacing = img.header.get_zooms()[:3]
+
+        if not np.allclose(spacing, (1.0, 1.0, 1.0), atol=1e-3):
+            data = resample_to_uniform(data, spacing, target_spacing=(1.0, 1.0, 1.0))
+        return data
+
+
+
+
+
+
+
 class BrainMetDataset(tio.SubjectsDataset):
     def __init__(self, root_dir, transform=None):
         # lazy loading
