@@ -2,6 +2,10 @@
 /MICCAI-LH-BraTS2025-MET-Challenge-Validation/
 runs/*
 !runs/.gitkeep
+# Keep the empty results/ folder, ignore its contents
+results/*
+!results/.gitkeep
+
 
 # Jetbrain
 .idea/
