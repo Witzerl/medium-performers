@@ -5,6 +5,7 @@ import torch
 import torchio as tio
 import nibabel as nib
 from tqdm import tqdm
+import scipy.ndimage as ndi
 
 from utils.loading_utils import load_case
 from utils.preprocessing import (z_score_normalization, random_crop_3d, resample_to_uniform)
@@ -14,7 +15,6 @@ class RandomCropOrPad(tio.Transform):
      Note: This is still a bit buggy and unstable
 
      """
-
     def __init__(self, target_shape, padding_mode='constant', padding_value=0, p=1):
         super().__init__(p=p)
         self.target_shape = np.array(target_shape)
@@ -63,6 +63,47 @@ class RandomCropOrPad(tio.Transform):
 
         return subject
 
+def apply_random_affine_3d(image, seg, max_rot=10, max_trans=5):
+    """
+    Applies a small random 3D affine transformation to a multi-channel image and label volume.
+    Assumes image shape (C, H, W, D) and seg shape (1, H, W, D).
+    """
+    angle = np.deg2rad(np.random.uniform(-max_rot, max_rot))
+    tx, ty, tz = np.random.uniform(-max_trans, max_trans, size=3)
+
+    # Simple rotation around z axis + translation
+    cos_a, sin_a = np.cos(angle), np.sin(angle)
+    affine_matrix = np.array([
+        [cos_a, -sin_a, 0],
+        [sin_a,  cos_a, 0],
+        [0,      0,     1]
+    ])
+
+    affine_offset = [-tx, -ty, -tz]
+
+    # Apply to each image channel
+    for c in range(image.shape[0]):
+        image[c] = ndi.affine_transform(
+            image[c],
+            matrix=affine_matrix,
+            offset=affine_offset,
+            order=1,
+            mode='nearest'
+        )
+
+    # Apply to segmentation (nearest-neighbor to preserve labels)
+    seg[0] = ndi.affine_transform(
+        seg[0],
+        matrix=affine_matrix,
+        offset=affine_offset,
+        order=0,
+        mode='nearest'
+    )
+
+    return image, seg
+
+
+
 class BrainMetPytorchDataset(Dataset):
     """ Pytorch Dataset for loading BraTS datapoints.
     Based on https://github.com/KurtLabUW/brats2023_updated/tree/master
@@ -73,11 +114,12 @@ class BrainMetPytorchDataset(Dataset):
         img_pad_value: Const value with which the input images are padded.
         seg_pad_value: Const value with which the segmentations are padded.
     """
-    def __init__(self, root_dir, patch_size=(128,128, 96), img_pad_value=0, seg_pad_value=0):
+    def __init__(self, root_dir, patch_size=(128,128, 96), img_pad_value=0, seg_pad_value=0, do_raffine=False):
         self.root_dir = root_dir
         self.patch_size = patch_size
         self.img_pad_value = img_pad_value
         self.seg_pad_value = seg_pad_value
+        self.random_affine = do_raffine
 
         self.datapoints = []
 
@@ -139,6 +181,9 @@ class BrainMetPytorchDataset(Dataset):
         else:
             # fallback if all attempts fail (no tumor in patch)
             cropped_img, cropped_seg = images, segmentation
+
+        if self.random_affine:
+            cropped_img, cropped_seg = apply_random_affine_3d(cropped_img, cropped_seg)
 
         # Volume transformations
         #images, segmentation = random_crop_3d(images, segmentation, crop_size=self.patch_size, img_pad_value=self.img_pad_value, seg_pad_value=self.seg_pad_value)
