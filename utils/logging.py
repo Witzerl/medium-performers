@@ -36,7 +36,7 @@ class ProgressBar(Logger):
     def on_epoch_end(self, epoch: int, **kwargs):
         print("\nEpoch Summary:")
         for tag, avg_loss in kwargs.items():
-            print(f"  {tag}-loss: {avg_loss:.4f}")
+            print(f"  {tag}: {avg_loss:.4f}")
 
 
 class TensorBoard(Logger):
