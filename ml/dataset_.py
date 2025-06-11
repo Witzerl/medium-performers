@@ -79,9 +79,24 @@ class BrainMetPytorchDataset(Dataset):
         self.img_pad_value = img_pad_value
         self.seg_pad_value = seg_pad_value
 
-        # TODO: For now it only looks at the top-level directories and ignores the UCSD-Training folder
-        #  and including this folder drastically increases the training time (over and hour per epoch) and randomly kills workers
-        self.datapoints = [d for d in os.listdir(self.root_dir) if os.path.isdir(os.path.join(self.root_dir, d)) and d.startswith('BraTS-MET')]
+        self.datapoints = []
+
+        # Top-level BraTS-MET folders
+        for d in os.listdir(root_dir):
+            path = os.path.join(root_dir, d)
+            if os.path.isdir(path) and d.startswith("BraTS-MET"):
+                self.datapoints.append(path)
+
+        # UCSD-Training subfolders (if present)
+        ucsd_path = os.path.join(root_dir, "UCSD - Training")
+        if os.path.isdir(ucsd_path):
+            print(f'Found UCSD-Training subfolder: {ucsd_path}')
+            for d in os.listdir(ucsd_path):
+                path = os.path.join(ucsd_path, d)
+                if os.path.isdir(path) and d.startswith("BraTS-MET"):
+                    self.datapoints.append(path)
+        print(f'Total # samples: {len(self.datapoints)} in {self.root_dir}\n')
+
 
     def __len__(self):
         return len(self.datapoints)
@@ -109,9 +124,26 @@ class BrainMetPytorchDataset(Dataset):
         segmentation = segmentation[None, ...]  # (1, H, W, D)
         # segmentation = segmentation_to_channels(segmentation)
 
+        # Content-aware random crop
+        MAX_ATTEMPTS = 3
+        for _ in range(MAX_ATTEMPTS):
+            cropped_img, cropped_seg = random_crop_3d(
+                images,
+                segmentation,
+                crop_size=self.patch_size,
+                img_pad_value=self.img_pad_value,
+                seg_pad_value=self.seg_pad_value,
+            )
+            if cropped_seg.sum() > 0:
+                break
+        else:
+            # fallback if all attempts fail (no tumor in patch)
+            cropped_img, cropped_seg = images, segmentation
+
         # Volume transformations
-        images, segmentation = random_crop_3d(images, segmentation, crop_size=self.patch_size, img_pad_value=self.img_pad_value, seg_pad_value=self.seg_pad_value)
-        return torch.from_numpy(images), torch.from_numpy(segmentation)
+        #images, segmentation = random_crop_3d(images, segmentation, crop_size=self.patch_size, img_pad_value=self.img_pad_value, seg_pad_value=self.seg_pad_value)
+        #return torch.from_numpy(images), torch.from_numpy(segmentation)
+        return torch.from_numpy(cropped_img), torch.from_numpy(cropped_seg)
 
     def _prepare_datapoint(self, datapoint):
         """ Loads the  different layers and segmentations """
@@ -127,8 +159,9 @@ class BrainMetPytorchDataset(Dataset):
     def _load(self, datapoint, suffix):
         """ Loads full 3d vol using nibabel """
 
-        filename = f'{datapoint}-{suffix}.nii.gz'
-        path = os.path.join(self.root_dir, datapoint, filename)
+        folder_name = os.path.basename(datapoint)
+        filename = f'{folder_name}-{suffix}.nii.gz'
+        path = os.path.join(datapoint, filename)
 
         img = nib.load(path)
 
