@@ -31,7 +31,7 @@ def compute_braTS_dice(pred, target, num_classes=5):
     target_wt = (target > 0)
 
     pred_tc = (pred == 1) | (pred == 3) | (pred == 4)  # Tumor Core: NCR, ET, RC => labels 1, 3, 4
-    target_tc = (pred == 1) | (pred == 3) | (pred == 4)
+    target_tc = (target == 1) | (target == 3) | (target == 4)
 
     pred_et = (pred == 3)  # ET: enhancing only
     target_et = (target == 3)

@@ -167,7 +167,7 @@ class BrainMetPytorchDataset(Dataset):
         # segmentation = segmentation_to_channels(segmentation)
 
         # Content-aware random crop
-        MAX_ATTEMPTS = 3
+        MAX_ATTEMPTS = 5
         for _ in range(MAX_ATTEMPTS):
             cropped_img, cropped_seg = random_crop_3d(
                 images,
@@ -179,8 +179,14 @@ class BrainMetPytorchDataset(Dataset):
             if cropped_seg.sum() > 0:
                 break
         else:
-            # fallback if all attempts fail (no tumor in patch)
-            cropped_img, cropped_seg = images, segmentation
+            # fallback: just take any patch (may contain only background)
+            cropped_img, cropped_seg = random_crop_3d(
+                images,
+                segmentation,
+                crop_size=self.patch_size,
+                img_pad_value=self.img_pad_value,
+                seg_pad_value=self.seg_pad_value,
+            )
 
         if self.random_affine:
             cropped_img, cropped_seg = apply_random_affine_3d(cropped_img, cropped_seg)
