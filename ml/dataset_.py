@@ -25,39 +25,42 @@ class RandomCropOrPad(tio.Transform):
         for image in subject.get_images(intensity_only=False):
             data = image.data
             current_shape = np.array(data.shape[1:])  # exclude channel
-            diff = self.target_shape - current_shape
 
-            padding = [[0, 0]]  # channel dimension not padded
-            crop = [[0, 0]]  # for channel dimension
+            # Crop first
+            for i in range(3):
+                excess = current_shape[i] - self.target_shape[i]
+                if excess > 0:
+                    crop_start = np.random.randint(0, excess + 1)
+                    crop_end = crop_start + self.target_shape[i]
+                    slicer = [slice(None)]
+                    slicer += [slice(None)] * i + [slice(crop_start, crop_end)]
+                    slicer += [slice(None)] * (2 - i)
+                    data = data[tuple(slicer)]
+                    current_shape[i] = self.target_shape[i]
 
-            for d in diff:
-                if d > 0:
-                    pad_before = np.random.randint(0, d + 1)
-                    pad_after = d - pad_before
-                    padding.append([pad_before, pad_after])
-                    crop.append([0, 0])
-                elif d < 0:
-                    crop_before = np.random.randint(0, -d + 1)
-                    crop_after = -d - crop_before
-                    padding.append([0, 0])
-                    crop.append([crop_before, crop_after])
+            # Pad if needed
+            pad_dims = []
+            for i in range(3):
+                diff = self.target_shape[i] - current_shape[i]
+                if diff > 0:
+                    pad_before = diff // 2
+                    pad_after = diff - pad_before
                 else:
-                    padding.append([0, 0])
-                    crop.append([0, 0])
+                    pad_before = pad_after = 0
+                pad_dims.append((pad_before, pad_after))
 
-            # Apply crop if needed
-            if any(c[0] > 0 or c[1] > 0 for c in crop[1:]):
-                slices = tuple(
-                    slice(c[0], data.shape[i + 1] - c[1]) for i, c in enumerate(crop[1:])
-                )
-                data = data[:, slices[0], slices[1], slices[2]]
-
-            # Apply padding if needed
-            if any(p[0] > 0 or p[1] > 0 for p in padding[1:]):
-                pad_flat = [val for pair in reversed(padding[1:]) for val in pair]  # reverse to match torch padding order
+            pad_flat = [p for pair in reversed(pad_dims) for p in pair]
+            if any(p > 0 for p in pad_flat):
                 data = torch.nn.functional.pad(
-                    data, pad_flat, mode=self.padding_mode, value=self.padding_value
+                    data,
+                    pad=pad_flat,
+                    mode=self.padding_mode,
+                    value=self.padding_value,
                 )
+
+            # Final safety check
+            assert list(data.shape[1:]) == list(self.target_shape), \
+                f"Final shape {data.shape[1:]} does not match target {self.target_shape}"
 
             image.set_data(data)
 
@@ -274,6 +277,105 @@ class BrainMetFullVolumeDataset(Dataset):
 
         if not np.allclose(spacing, (1.0, 1.0, 1.0), atol=1e-3):
             data = resample_to_uniform(data, spacing, target_spacing=(1.0, 1.0, 1.0))
+        return data
+
+class BrainMetPytorchDatasetValidation(Dataset):
+    def __init__(self, root_dir):
+        self.root_dir = root_dir
+        self.datapoints = []
+
+        # Top-level BraTS-MET folders
+        for d in os.listdir(root_dir):
+            path = os.path.join(root_dir, d)
+            if os.path.isdir(path) and d.startswith("BraTS-MET"):
+                self.datapoints.append(path)
+
+        # UCSD-Training subfolders (if present)
+        ucsd_path = os.path.join(root_dir, "UCSD - Training")
+        if os.path.isdir(ucsd_path):
+            print(f'Found UCSD-Training subfolder: {ucsd_path}')
+            for d in os.listdir(ucsd_path):
+                path = os.path.join(ucsd_path, d)
+                if os.path.isdir(path) and d.startswith("BraTS-MET"):
+                    self.datapoints.append(path)
+        print(f'Total # samples: {len(self.datapoints)} in {self.root_dir}\n')
+
+
+    def __len__(self):
+        return len(self.datapoints)
+
+    def __getitem__(self, idx):
+        """ Loads the datapoint at index idx and applies a z-score normalization over the layers
+        and a random cropping into the whole volume before returning.
+
+        Returns:
+            images: Torch tensor 3d image of shape (4, ph, ph, pd)
+            segmentation: Torch tensor 3d segmentation of shape (1, ph, ph, pd)
+        """
+
+        data_point = self.datapoints[idx]
+        images, segmentation = self._prepare_datapoint(data_point)
+
+        # Layer-wise transformations
+        images = [np.ascontiguousarray(x, dtype=np.float32) for x in images]
+        images = [z_score_normalization(x) for x in images]
+
+        segmentation = np.ascontiguousarray(segmentation, dtype=np.float32)
+
+        # Assemble volumes
+        images = np.stack(images)               # (4, H, W, D)
+        segmentation = segmentation[None, ...]  # (1, H, W, D)
+
+        images = torch.from_numpy(images)
+        segmentation = torch.from_numpy(segmentation)
+
+        import torch.nn.functional as F
+        def pad_to_next_multiple(x, multiple=16):
+            # x: (C, H, W, D)
+            padding = []
+            for dim in reversed(x.shape[1:]):  # skip channel
+                remainder = dim % multiple
+                pad = (0, 0) if remainder == 0 else (0, multiple - remainder)
+                padding.extend(pad)
+            return F.pad(x, padding, mode="constant", value=0)
+
+        images = pad_to_next_multiple(images, 16)
+        segmentation = pad_to_next_multiple(segmentation, 16)
+
+        return images, segmentation
+
+    def _prepare_datapoint(self, datapoint):
+        """ Loads the  different layers and segmentations """
+
+        layer_data = list()
+        for suffix in ['t1n', 't1c', 't2w', 't2f']:
+            data = self._load(datapoint, suffix)
+            layer_data.append(data)
+
+        segmentation_data = self._load(datapoint, 'seg')
+        return layer_data, segmentation_data
+
+    def _load(self, datapoint, suffix):
+        """ Loads full 3d vol using nibabel """
+
+        folder_name = os.path.basename(datapoint)
+        filename = f'{folder_name}-{suffix}.nii.gz'
+        path = os.path.join(datapoint, filename)
+
+        img = nib.load(path)
+
+        # assert RAS orientation for all samples
+        orig_ornt = nib.io_orientation(img.affine)
+        targ_ornt = nib.orientations.axcodes2ornt("RAS")
+        transform = nib.orientations.ornt_transform(orig_ornt, targ_ornt)
+        img = img.as_reoriented(transform)
+
+        data = img.get_fdata(dtype=np.float32)
+        spacing = img.header.get_zooms()[:3]
+
+        target_spacing = (1.0, 1.0, 1.0)
+        if not np.allclose(spacing, (1.0, 1.0, 1.0), atol=1e-3):
+            data = resample_to_uniform(data, spacing, target_spacing)
         return data
 
 
