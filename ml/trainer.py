@@ -119,7 +119,8 @@ def compute_all_metrics(pred, target, spacing=(1.0, 1.0, 1.0), tolerance_mm=1.0)
         target_mask = get_mask(target, region)
 
         results[region] = {
-            "NSD": nsd_batch(pred_mask, target_mask, spacing, tolerance_mm),
+            #"NSD": nsd_batch(pred_mask, target_mask, spacing, tolerance_mm),
+            "NSD": 0,
             "Sensitivity": sensitivity(pred_mask, target_mask),
             "Specificity": specificity(pred_mask, target_mask),
             "Precision": precision(pred_mask, target_mask),
