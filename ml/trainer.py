@@ -52,6 +52,8 @@ import torch
 import numpy as np
 from surface_distance import compute_surface_distances
 
+from surface_distance import compute_surface_distances, compute_surface_dice_at_tolerance
+
 def compute_all_metrics(pred, target, spacing=(1.0, 1.0, 1.0), tolerance_mm=1.0):
     """
     Computes all required lesion-wise metrics for WT, TC, ET regions:
@@ -68,34 +70,39 @@ def compute_all_metrics(pred, target, spacing=(1.0, 1.0, 1.0), tolerance_mm=1.0)
     """
     eps = 1e-5
     def sensitivity(p, t):
-        tp = (p & t).sum()
-        fn = (~p & t).sum()
-        return tp / (tp + fn + eps)
+        tp = (p & t).sum(dim=(1,2,3))
+        fn = (~p & t).sum(dim=(1,2,3))
+        return (tp / (tp + fn + eps)).mean().item()
 
     def specificity(p, t):
-        tn = (~p & ~t).sum()
-        fp = (p & ~t).sum()
-        return tn / (tn + fp + eps)
+        tn = (~p & ~t).sum(dim=(1,2,3))
+        fp = (p & ~t).sum(dim=(1,2,3))
+        return (tn / (tn + fp + eps)).mean().item()
 
     def precision(p, t):
-        tp = (p & t).sum()
-        fp = (p & ~t).sum()
-        return tp / (tp + fp + eps)
+        tp = (p & t).sum(dim=(1,2,3))
+        fp = (p & ~t).sum(dim=(1,2,3))
+        return (tp / (tp + fp + eps)).mean().item()
 
-    def nsd(pred_bin, target_bin, spacing, tolerance):
-        # Ensure 3D shape: (H, W, D)
-        pred_np = pred_bin.squeeze().cpu().numpy().astype(np.bool_)
-        target_np = target_bin.squeeze().cpu().numpy().astype(np.bool_)
+    def nsd_batch(pred_bin, target_bin, spacing, tolerance):
+        """NSD averaged over batch."""
+        batch_nsd = []
+        for i in range(pred_bin.shape[0]):
+            pred_np = pred_bin[i].cpu().numpy().astype(np.bool_)
+            target_np = target_bin[i].cpu().numpy().astype(np.bool_)
 
-        sd = compute_surface_distances(
-            target_np, pred_np, spacing
-        )
-        dist = sd["distances_pred_to_gt"]
-        if dist.size == 0:
-            return 1.0 if target_np.sum() == 0 and pred_np.sum() == 0 else 0.0
-        return np.mean(dist <= tolerance)
+            if pred_np.sum() == 0 and target_np.sum() == 0:
+                batch_nsd.append(1.0)
+                continue
+            if pred_np.sum() == 0 or target_np.sum() == 0:
+                batch_nsd.append(0.0)
+                continue
 
-    # Region masks (based on your label definitions)
+            sd = compute_surface_distances(target_np, pred_np, spacing)
+            score = compute_surface_dice_at_tolerance(sd, tolerance)
+            batch_nsd.append(score)
+        return sum(batch_nsd) / len(batch_nsd)
+
     def get_mask(x, region):
         if region == "WT":
             return (x > 0)
@@ -107,19 +114,19 @@ def compute_all_metrics(pred, target, spacing=(1.0, 1.0, 1.0), tolerance_mm=1.0)
             raise ValueError(f"Unknown region: {region}")
 
     results = {}
-
     for region in ["WT", "TC", "ET"]:
         pred_mask = get_mask(pred, region)
         target_mask = get_mask(target, region)
 
         results[region] = {
-            "NSD": nsd(pred_mask, target_mask, spacing, tolerance_mm),
-            "Sensitivity": sensitivity(pred_mask, target_mask).item(),
-            "Specificity": specificity(pred_mask, target_mask).item(),
-            "Precision": precision(pred_mask, target_mask).item(),
+            "NSD": nsd_batch(pred_mask, target_mask, spacing, tolerance_mm),
+            "Sensitivity": sensitivity(pred_mask, target_mask),
+            "Specificity": specificity(pred_mask, target_mask),
+            "Precision": precision(pred_mask, target_mask),
         }
 
     return results
+
 
 
 class Trainer:
