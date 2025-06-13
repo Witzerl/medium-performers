@@ -98,6 +98,7 @@ def compute_all_metrics(pred, target, spacing=(1.0, 1.0, 1.0), tolerance_mm=1.0)
                 batch_nsd.append(0.0)
                 continue
 
+            target_np = target_np.squeeze()
             sd = compute_surface_distances(target_np, pred_np, spacing)
             score = compute_surface_dice_at_tolerance(sd, tolerance)
             batch_nsd.append(score)
@@ -119,8 +120,8 @@ def compute_all_metrics(pred, target, spacing=(1.0, 1.0, 1.0), tolerance_mm=1.0)
         target_mask = get_mask(target, region)
 
         results[region] = {
-            #"NSD": nsd_batch(pred_mask, target_mask, spacing, tolerance_mm),
-            "NSD": 0,
+            "NSD": nsd_batch(pred_mask, target_mask, spacing, tolerance_mm),
+            # "NSD": 0,
             "Sensitivity": sensitivity(pred_mask, target_mask),
             "Specificity": specificity(pred_mask, target_mask),
             "Precision": precision(pred_mask, target_mask),
